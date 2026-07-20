@@ -1,0 +1,223 @@
+{
+  "name": "Calendar Integration Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "calendar-assignment",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "3f38d0cc-3e71-4c39-9c9f-3250fb801c9f",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        128
+      ],
+      "webhookId": "calendar-assignment-webhook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1000000-0000-0000-0000-000000000001",
+              "name": "summary",
+              "value": "={{ $json.body.summary }}",
+              "type": "string"
+            },
+            {
+              "id": "f1000000-0000-0000-0000-000000000002",
+              "name": "start.dateTime",
+              "value": "={{ $json.body.start }}",
+              "type": "string"
+            },
+            {
+              "id": "f1000000-0000-0000-0000-000000000003",
+              "name": "start.timeZone",
+              "value": "UTC",
+              "type": "string"
+            },
+            {
+              "id": "f1000000-0000-0000-0000-000000000004",
+              "name": "end.dateTime",
+              "value": "={{ $json.body.end }}",
+              "type": "string"
+            },
+            {
+              "id": "f1000000-0000-0000-0000-000000000005",
+              "name": "end.timeZone",
+              "value": "UTC",
+              "type": "string"
+            },
+            {
+              "id": "f1000000-0000-0000-0000-000000000006",
+              "name": "description",
+              "value": "={{ $json.body.description }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "dotNotation": true
+        }
+      },
+      "id": "9c4ba516-5ffe-4dea-931e-3733786d4798",
+      "name": "Prepare Calendar Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -496,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ summary: $json.summary, start: $json.start, end: $json.end, description: $json.description }) }}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "id": "e4bf52b7-5892-4ca6-91a2-2fe6d5b6786e",
+      "name": "Create Calendar Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -288,
+        128
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "qkOCZEaNTqWcYvhb",
+          "name": "Google Calendar account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"success\", \"message\": \"Event created successfully\", \"eventId\": $json.id, \"htmlLink\": $json.htmlLink } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "4747ea0d-6687-421f-ad75-7cedf851b0b6",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": $json.status, \"category\": $json.category, \"message\": $json.message } }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "1b17d18e-b296-4b00-bb63-f37c029cea42",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const err = $input.item.json;\n\n// Google API errors usually arrive nested like err.error.errors[0].reason / message,\n// or sometimes flattened depending on how the HTTP Request node surfaced it.\nconst googleError = err.error?.errors?.[0] || err.error || err;\nconst rawMessage = (googleError.message || err.message || '').toLowerCase();\nconst statusCode = err.error?.code || err.statusCode || err.code || null;\n\nlet category = 'unknown_error';\nlet userMessage = 'An unexpected error occurred while creating the event.';\n\nif (statusCode === 401 || rawMessage.includes('invalid credentials') || rawMessage.includes('unauthorized')) {\n  category = 'auth_error';\n  userMessage = 'Authentication failed - the calendar access token may be invalid or expired.';\n} else if (statusCode === 403) {\n  category = 'permission_error';\n  userMessage = 'Permission denied - check that the calendar scope/consent is granted.';\n} else if (rawMessage.includes('date') || rawMessage.includes('datetime') || rawMessage.includes('invalid time')) {\n  category = 'invalid_date';\n  userMessage = 'The start or end date/time format is invalid.';\n} else if (rawMessage.includes('required') || rawMessage.includes('missing')) {\n  category = 'missing_field';\n  userMessage = 'One or more required fields (summary, start, end) are missing.';\n} else if (statusCode === 400 || rawMessage.includes('bad request')) {\n  category = 'bad_request';\n  userMessage = 'The request was malformed - please check all field values.';\n}\n\nreturn {\n  status: 'error',\n  category,\n  message: userMessage,\n  rawError: rawMessage || null\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        208
+      ],
+      "id": "f989497a-fbfa-49a5-abae-5014f06c7ec7",
+      "name": "Format Error Response"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Calendar Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Calendar Payload": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Response": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "1c8fd83d-f162-4216-8a24-66e9992d1c8e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8942ced4274b53b4e17d78e836ce7937d58bdc74c5c06f3e1657fe125f390dd2"
+  },
+  "nodeGroups": [],
+  "id": "pl1cXqibSF2OFrSE",
+  "tags": []
+}
