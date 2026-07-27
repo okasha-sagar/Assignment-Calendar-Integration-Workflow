@@ -1,0 +1,409 @@
+{
+  "name": "Calendar Integration Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "calendar-assignment",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "6a92d5b5-d4fc-4aa6-a183-149c0c0c2844",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        576
+      ],
+      "webhookId": "calendar-assignment-webhook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1000000-0000-0000-0000-000000000001",
+              "name": "summary",
+              "value": "={{ $json.body.summary }}",
+              "type": "string"
+            },
+            {
+              "id": "f1000000-0000-0000-0000-000000000002",
+              "name": "start.dateTime",
+              "value": "={{ $json.body.start }}",
+              "type": "string"
+            },
+            {
+              "id": "f1000000-0000-0000-0000-000000000003",
+              "name": "start.timeZone",
+              "value": "UTC",
+              "type": "string"
+            },
+            {
+              "id": "f1000000-0000-0000-0000-000000000004",
+              "name": "end.dateTime",
+              "value": "={{ $json.body.end }}",
+              "type": "string"
+            },
+            {
+              "id": "f1000000-0000-0000-0000-000000000005",
+              "name": "end.timeZone",
+              "value": "UTC",
+              "type": "string"
+            },
+            {
+              "id": "f1000000-0000-0000-0000-000000000006",
+              "name": "description",
+              "value": "={{ $json.body.description }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "dotNotation": true
+        }
+      },
+      "id": "ffdf3b82-7630-4520-a9bf-585c73a02ba0",
+      "name": "Prepare Calendar Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -416,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nfunction error(message) {\n  return {\n    json: {\n      success: false,\n      status: \"error\",\n      statusCode: 400,\n      category: \"bad_request\",\n      message\n    }\n  };\n}\n\nif (!item.summary)\n  return error(\"summary is required\");\n\nif (!item.start?.dateTime)\n  return error(\"start.dateTime is required\");\n\nif (!item.end?.dateTime)\n  return error(\"end.dateTime is required\");\n\nif (!item.start?.timeZone)\n  return error(\"start.timeZone is required\");\n\nif (!item.end?.timeZone)\n  return error(\"end.timeZone is required\");\n\nif (isNaN(Date.parse(item.start.dateTime)))\n  return error(\"Invalid start.dateTime\");\n\nif (isNaN(Date.parse(item.end.dateTime)))\n  return error(\"Invalid end.dateTime\");\n\nif (new Date(item.start.dateTime) >= new Date(item.end.dateTime))\n  return error(\"Start must be before End\");\n\nreturn {\n  json: {\n    success: true,\n    statusCode: 200,\n    data: item\n  }\n};"
+      },
+      "id": "a99e36b5-38f7-4161-b6ba-7602b1362592",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events/122",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ summary: $json.data.summary, start: $json.data.start, end: $json.data.end, description: $json.data.description }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "f03eb525-5aef-4efc-9e01-997aa1257571",
+      "name": "Create Calendar Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        272,
+        560
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "jEi0brwSDLsy3kxJ",
+          "name": "Google Calendar account 1"
+        },
+        "httpHeaderAuth": {
+          "id": "XX0m98EFOQWvbdf2",
+          "name": "Header Auth account"
+        },
+        "oAuth2Api": {
+          "id": "nBuT75XlFDDckKp2",
+          "name": "OAuth2 token"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"success\", \"message\": \"Event created successfully\", \"eventId\": $json.id, \"htmlLink\": $json.htmlLink } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "8a22ea4d-9fec-413c-b527-9e4b50c0aa9b",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        544,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{\n{\n  success: $('Check Auth Error').item.json.success,\n  statusCode: $('Check Auth Error').item.json.statusCode,\n  category: $('Check Auth Error').item.json.category,\n  message: $('Check Auth Error').item.json.message\n}\n}}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 500 }}"
+        }
+      },
+      "id": "1114b4ed-b367-475e-bd26-ceedc4f8025e",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1184,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n\n  const err = item.json.error;\n\n  // Default values (success case)\n  let status = item.json.statusCode;\n  let message = \"Unknown error\";\n  let rawError = null;\n\n  if (err) {\n    status = err.status || status;\n\n    // Parse the Axios error message\n    try {\n      const jsonString = err.message.replace(/^\\d+\\s*-\\s*/, \"\");\n      rawError = JSON.parse(jsonString).error;\n      message = rawError.message;\n    } catch {\n      message = err.message;\n      rawError = err;\n    }\n  }\n\n  let category;\n\n  if (status >= 500) {\n    category = \"Server Error\";\n  } else if (status === 401) {\n    category = \"Unauthorized\";\n  } else if (status === 403) {\n    category = \"Forbidden\";\n  } else if (status === 400) {\n    category = \"Bad Request\";\n  } else if (status >= 400) {\n    category = \"Client Error\";\n  } else {\n    category = \"Unknown\";\n  }\n\n  return {\n    json: {\n      success: false,\n      statusCode: status,\n      category,\n      message,\n      rawError\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        736
+      ],
+      "id": "3c66e8dd-e060-4054-b36d-dfecc470a811",
+      "name": "Format Error Response"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-001",
+              "leftValue": "={{ $json.category }}",
+              "rightValue": "Unauthorized",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "08f9471c-71a8-460d-8d51-d2ef1b1a67df",
+      "name": "Check Auth Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        704,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "okashajaved.octacer@gmail.com",
+        "subject": "Alert: Calendar Auth Error",
+        "message": "={{ JSON.stringify({ text: `🚨 Calendar Integration Auth Error Time: ${new Date().toISOString()} Error: ${$json.message} Category: ${$json.category}` }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        992,
+        832
+      ],
+      "id": "29360526-332f-44a1-9457-a1c77e27eb5c",
+      "name": "Send a message",
+      "webhookId": "03e21395-33b6-41da-ae0b-cd43d8eb3fd8",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "rVM05dhmv11jSyYy",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "is-valid-cond-0001",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a473eaea-2535-4aec-8dd1-2990e25df1fa",
+      "name": "Is Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        32,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        192,
+        848
+      ],
+      "id": "f994bb16-e047-4dff-b11b-4e430b1c20c0",
+      "name": "Invalid fields Response"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Calendar Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Calendar Payload": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Is Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Response": {
+      "main": [
+        [
+          {
+            "node": "Check Auth Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Auth Error": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid?": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Invalid fields Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "49819a8b-f66e-4219-baa2-7b84d7af6738",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8942ced4274b53b4e17d78e836ce7937d58bdc74c5c06f3e1657fe125f390dd2"
+  },
+  "nodeGroups": [],
+  "id": "faLPbJtrrwXV3dWg",
+  "tags": []
+}
